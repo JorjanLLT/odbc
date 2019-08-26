@@ -65,14 +65,31 @@ func (p *Parameter) BindValue(h api.SQLHSTMT, idx int, v driver.Value) error {
 		buflen = api.SQLLEN(l)
 		plen = p.StoreStrLen_or_IndPtr(buflen)
 		switch {
+		case size >= 254 && VFPflag:
+			sqltype = api.SQL_LONGVARCHAR
 		case size >= 4000:
 			sqltype = api.SQL_WLONGVARCHAR
 		case p.isDescribed:
 			sqltype = p.SQLType
 		case size <= 1:
 			sqltype = api.SQL_WVARCHAR
+			//VFP determines datatype used un DBFs
+			if VFPflag {
+				sqltype = api.SQL_CHAR
+			}
 		default:
 			sqltype = api.SQL_WCHAR
+			if VFPflag {
+				sqltype = api.SQL_CHAR
+			}
+		}
+		if VFPflag {
+			if size == 16 && d[0:4] == "{d '" {
+				sqltype = api.SQL_TYPE_DATE
+			}
+			if size == 26 && d[0:5] == "{ts '" {
+				sqltype = api.SQL_TYPE_TIMESTAMP
+			}
 		}
 	case int64:
 		if -0x80000000 < d && d < 0x7fffffff {
@@ -84,6 +101,10 @@ func (p *Parameter) BindValue(h api.SQLHSTMT, idx int, v driver.Value) error {
 			p.Data = &d2
 			buf = unsafe.Pointer(&d2)
 			sqltype = api.SQL_INTEGER
+			if VFPflag {
+				ctype = api.SQL_C_DOUBLE
+				sqltype = api.SQL_DOUBLE
+			}
 			size = 4
 		} else {
 			ctype = api.SQL_C_SBIGINT

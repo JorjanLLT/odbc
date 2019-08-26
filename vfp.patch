@@ -1,0 +1,76 @@
+diff --git a/conn.go b/conn.go
+index 5569dec..b2d7347 100644
+--- a/conn.go
++++ b/conn.go
+@@ -7,10 +7,15 @@ package odbc
+ import (
+ 	"database/sql/driver"
+ 	"unsafe"
++	"strings"
+ 
+ 	"github.com/alexbrainman/odbc/api"
+ )
+ 
++var (
++	VFPflag 	bool
++)
++
+ type Conn struct {
+ 	h   api.SQLHDBC
+ 	tx  *Tx
+@@ -18,6 +23,8 @@ type Conn struct {
+ }
+ 
+ func (d *Driver) Open(dsn string) (driver.Conn, error) {
++	//When open a connection sets a flag if using VFP
++	VFPflag = strings.Contains(dsn, "{Microsoft Visual FoxPro Driver}")
+ 	var out api.SQLHANDLE
+ 	ret := api.SQLAllocHandle(api.SQL_HANDLE_DBC, api.SQLHANDLE(d.h), &out)
+ 	if IsError(ret) {
+diff --git a/param.go b/param.go
+index 932e1a1..49cef77 100644
+--- a/param.go
++++ b/param.go
+@@ -65,14 +65,31 @@ func (p *Parameter) BindValue(h api.SQLHSTMT, idx int, v driver.Value) error {
+ 		buflen = api.SQLLEN(l)
+ 		plen = p.StoreStrLen_or_IndPtr(buflen)
+ 		switch {
++		case size >= 254 && VFPflag:
++			sqltype = api.SQL_LONGVARCHAR
+ 		case size >= 4000:
+ 			sqltype = api.SQL_WLONGVARCHAR
+ 		case p.isDescribed:
+ 			sqltype = p.SQLType
+ 		case size <= 1:
+ 			sqltype = api.SQL_WVARCHAR
++			//VFP determines datatype used un DBFs
++			if VFPflag {
++				sqltype = api.SQL_CHAR
++			}
+ 		default:
+ 			sqltype = api.SQL_WCHAR
++			if VFPflag {
++				sqltype = api.SQL_CHAR
++			}
++		}
++		if VFPflag {
++			if size == 16 && d[0:4] == "{d '" {
++				sqltype = api.SQL_TYPE_DATE
++			}
++			if size == 26 && d[0:5] == "{ts '" {
++				sqltype = api.SQL_TYPE_TIMESTAMP
++			}
+ 		}
+ 	case int64:
+ 		if -0x80000000 < d && d < 0x7fffffff {
+@@ -84,6 +101,10 @@ func (p *Parameter) BindValue(h api.SQLHSTMT, idx int, v driver.Value) error {
+ 			p.Data = &d2
+ 			buf = unsafe.Pointer(&d2)
+ 			sqltype = api.SQL_INTEGER
++			if VFPflag {
++				ctype = api.SQL_C_DOUBLE
++				sqltype = api.SQL_DOUBLE
++			}
+ 			size = 4
+ 		} else {
+ 			ctype = api.SQL_C_SBIGINT

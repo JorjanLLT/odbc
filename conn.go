@@ -7,8 +7,13 @@ package odbc
 import (
 	"database/sql/driver"
 	"unsafe"
+	"strings"
 
 	"github.com/alexbrainman/odbc/api"
+)
+
+var (
+	VFPflag 	bool
 )
 
 type Conn struct {
@@ -18,6 +23,8 @@ type Conn struct {
 }
 
 func (d *Driver) Open(dsn string) (driver.Conn, error) {
+	//When open a connection sets a flag if using VFP
+	VFPflag = strings.Contains(dsn, "{Microsoft Visual FoxPro Driver}")
 	var out api.SQLHANDLE
 	ret := api.SQLAllocHandle(api.SQL_HANDLE_DBC, api.SQLHANDLE(d.h), &out)
 	if IsError(ret) {
